@@ -194,6 +194,15 @@ class BundleTests(unittest.TestCase):
         self.assertEqual(self.validate(), 3)
         self.assertFalse((self.output / "manifest.json").exists())
 
+    def test_missing_input_leaves_no_output_directory(self):
+        self.source.unlink()
+        self.assertEqual(self.validate(), 3)
+        self.assertFalse(self.output.exists())
+
+    def test_missing_rules_file_leaves_no_output_directory(self):
+        self.assertEqual(self.validate(["--rules", str(self.root / "absent.json")]), 3)
+        self.assertFalse(self.output.exists())
+
     def test_demo_does_not_overwrite(self):
         self.assertEqual(self.invoke(["demo", "--output", str(self.source)]), 3)
 

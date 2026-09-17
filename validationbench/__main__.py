@@ -19,10 +19,11 @@ def event(directory, run_id, name, **fields):
 
 
 def validate(args):
+    input_bytes = args.input.read_bytes()
+    rule_bytes = args.rules.read_bytes() if args.rules else None
     args.output.mkdir(parents=True, exist_ok=False)
     run_id = str(uuid.uuid4())
     event(args.output, run_id, "validation_started")
-    input_bytes = args.input.read_bytes()
     input_bytes = args.input.read_bytes()
     (args.output / "input.csv").write_bytes(input_bytes)
     source_directory = Path(__file__).parent
@@ -33,11 +34,9 @@ def validate(args):
     try:
         if len(input_bytes) > 5_000_000:
             raise DataError("CSV exceeds the five-megabyte prototype limit")
-        rule_values = {}
-        if args.rules:
-            rule_bytes = args.rules.read_bytes()
+        rule_values = json.loads(rule_bytes) if rule_bytes is not None else {}
+        if rule_bytes is not None:
             (args.output / "rules-input.json").write_bytes(rule_bytes)
-            rule_values = json.loads(rule_bytes)
         rules = Rules.from_mapping(rule_values)
         effective_rules = asdict(rules)
         samples = parse_samples(input_bytes.decode("utf-8-sig"))
