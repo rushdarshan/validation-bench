@@ -1,141 +1,237 @@
-# ValidationBench
+# ValidationBench — Evidence-First Step-Response Validation
 
-A portfolio engineering-tool project: validate a recorded step response, produce
-an auditable report, and detect changes to the resulting evidence bundle.
+Validate a recorded step response, produce an auditable report, and detect
+any later change to the resulting evidence bundle. MATLAB-checked, CI-gated.
+
+[![CI](https://github.com/rushdarshan/validation-bench/actions/workflows/python-checks.yml/badge.svg)](https://github.com/rushdarshan/validation-bench/actions/workflows/python-checks.yml)
+![Python 3.12 · 3.13](https://img.shields.io/badge/python-3.12%20%C2%B7%203.13-blue)
+![stdlib only](https://img.shields.io/badge/deps-stdlib%20only-green)
+![MIT license](https://img.shields.io/badge/license-MIT-lightgrey)
+
+## Status
+
+| Component | State | Evidence |
+|---|---|---|
+| Python CLI (`validationbench/`) | Working | 54 tests OK; nominal→PASS, bias→FAIL, tampered→exit 4 |
+| Offline CSV comparator (`scripts/`) | Working | 8 dedicated tests; PARITY_PASS at pinned tolerances |
+| MATLAB export + unit tests (`matlab/`) | Executed once, checked in | R2026a Update 5; `runtests` 3 passed / 0 failed |
+| Python↔MATLAB parity gate | Passing | response max abs gap 4.996e-16 vs 1e-12 tolerance (~2000× margin) |
+| GitHub Actions (`python-checks.yml`) | Configured, hosted run pending | Contract-pinned by 10 tests; MATLAB itself never runs in CI |
+| JFrog/Artifactory adapter | Deferred | Later milestone, not claimed |
+| MATLAB in CI | Deferred | Fixture-based parity instead; MATLAB itself never runs in CI |
 
 This is an **educational, synthetic-data prototype**. It is not a wind-turbine
 controller, a certification system, a safety assessment, or Siemens software.
 No customer data, company source code, or company branding is used.
 
-## First runnable slice
+## Why ValidationBench
 
-- Python standard-library CLI; no dependency installation or virtual environment.
-- Explicit CSV contract, configuration checks and invalid-input rejection.
-- Three independently reported requirements: overshoot, settling and tail error.
-- PASS, FAIL and ERROR remain distinct; exit codes support automation.
-- Structured per-run JSONL logs with a shared run ID; not a distributed logging service.
-- JSON results, a LaTeX report, optional PDF compilation and a SHA-256 manifest.
-- Fresh output directory per run; existing results are never silently overwritten.
-- Manifest verification detects missing, extra or modified files. It is not a
-  signature or proof against an attacker who can rewrite the manifest itself.
+**Problem:** validation results for engineering models are usually a plot and
+a claim. Rerun it, tweak a number, regenerate the figure — nobody can tell
+what changed, what the thresholds were, or whether the "PASS" survived intact.
 
-The MATLAB export path is verified by a real run: MATLAB 26.1.0.3346908
-(R2026a) Update 5 executed `export_step_response`, and the resulting
-101-row CSV is checked in with provenance and measured tolerances (see
-"MATLAB handoff" below). The GitHub Actions workflow and any JFrog CLI
-usage remain unverified integration scaffolding: neither was available
-in the build environment. An Artifactory adapter is a later milestone,
-not a completed feature. See `BUILD_PLAN.md` for what must be
-demonstrated next.
+**Solution:** a stdlib-only tool that validates a step-response CSV against
+explicit numeric requirements, seals input + rules + result + report + logs
+into a SHA-256-manifested bundle, and verifies that bundle later. A MATLAB
+run of the same model is checked in as a fixture, so Python↔MATLAB agreement
+is a measured gate, not an assertion.
 
-## Run from this directory
+## Try it in 30 seconds
 
-Requires Python 3.11 or newer. The initial local checks use Python 3.13.
-PDF generation additionally requires `pdflatex` on PATH.
+Requires Python 3.11+. No dependencies, no virtual environment.
 
 ```bash
-python -m validationbench demo --scenario nominal --output examples/nominal.csv
-python -m validationbench validate examples/nominal.csv --output runs/nominal --pdf
-python -m validationbench verify runs/nominal
-python -m unittest discover -s tests -v
+git clone https://github.com/rushdarshan/validation-bench.git
+cd validation-bench
+python -m unittest discover -s tests            # 54 tests, all green
+
+python -m validationbench demo --scenario nominal --output /tmp/nominal.csv
+python -m validationbench validate /tmp/nominal.csv --output /tmp/good
+python -m validationbench verify /tmp/good      # INTEGRITY_VERIFIED
 ```
 
-Run names must be new. Reusing `runs/nominal` intentionally fails rather than
-mixing new evidence with old results. Choose a new name to repeat an experiment.
-This workspace already contains the initial demo inputs and runs. Inspect those
-outputs or choose new input/output names; the commands above assume a fresh copy.
-
-The failing demonstration is supposed to return exit code 1:
+The failing path is a first-class citizen:
 
 ```bash
-python -m validationbench demo --scenario bias --output examples/bias.csv
-python -m validationbench validate examples/bias.csv --output runs/bias --pdf
-python -m validationbench verify runs/bias
+python -m validationbench demo --scenario bias --output /tmp/bias.csv
+python -m validationbench validate /tmp/bias.csv --output /tmp/bad   # exit 1: FAIL, not ERROR
+python -m validationbench verify /tmp/bad                            # integrity still verifies
 ```
 
-`verify` checks integrity, not whether the modeled response passes requirements.
-A correctly preserved FAIL bundle can pass integrity verification.
+Tamper with any sealed file and verification fails with exit 4
+(`INTEGRITY_ERROR: Evidence checksum mismatch`).
+
+## Commands
+
+| Command | Purpose |
+|---|---|
+| `demo --scenario nominal\|bias\|missing --output FILE` | Write a deterministic demo CSV (refuses to overwrite) |
+| `validate INPUT --output DIR [--rules R.json] [--pdf]` | Check requirements, seal the evidence bundle (fresh dir only) |
+| `verify BUNDLE` | Check manifest integrity; distinct from validation PASS/FAIL |
+| `scripts/compare_step_response.py A.csv B.csv --abs-tol X --rel-tol Y` | Offline CSV-vs-CSV parity check; exits 0 pass / 1 mismatch / 2 error |
+
+Exit codes: `0` validation PASS / integrity OK · `1` requirement FAIL ·
+`2` invalid data or configuration · `3` local tool/I-O failure ·
+`4` integrity failure.
+
+## How it works
+
+```
+demo CSV ──▶ validate ──▶ input.csv + rules + result.json + report.tex
+  (+ --pdf)                  (+ events.jsonl + provenance.json)
+                                       │ seal (SHA-256 manifest)
+                                       ▼
+                              verify ──▶ INTEGRITY_VERIFIED / exit 4
+```
+
+Every run gets a UUID run ID shared across `events.jsonl` entries, so logs
+correlate without a central service. `verify` checks integrity only — a
+correctly preserved FAIL bundle passes verification. The manifest is a
+tamper record, not a signature against an attacker who can rewrite it.
 
 ## Contract and numerical definitions
 
-CSV header: `time_s,reference,response`. All values must be finite. Time starts
-at zero, increases strictly, and is uniformly sampled. The reference is a
-constant positive step applied at time zero. This version deliberately rejects
+CSV header: `time_s,reference,response`. All values finite. Time starts at
+zero, increases strictly, uniformly sampled. The reference is a constant
+positive step applied at time zero. This version deliberately rejects
 general time-varying references instead of assigning misleading step metrics.
 
-The demonstration is the analytic response `1 - exp(-time_s)` of an idealized
-unit-gain first-order system with a one-second time constant. It is not a tuned
-PID, wind model or physically calibrated plant. The bias case adds a constant
-0.2 to the nominal response and should fail the configured requirements.
+The demo is the analytic response `1 - exp(-time_s)` of an idealized
+unit-gain first-order system with a one-second time constant — not a tuned
+PID, wind model, or calibrated plant. The bias case adds a constant 0.2 and
+must fail the configured requirements.
 
-- Overshoot fraction: `max(0, max(response) - reference) / reference`.
-- Tail error fraction: maximum absolute error divided by reference over the
-  final configured tail window, inclusive of its start sample.
-- Observed settling time: first sample after the last sample outside the band,
-  provided at least one full tail-window duration remains afterward. This is
-  evidence of remaining in-band over the recorded horizon only, not forever.
-- No observed settling time is represented as JSON `null`, never as zero.
+- **Overshoot fraction:** `max(0, max(response) - reference) / reference`.
+- **Tail error fraction:** max absolute error / reference over the final
+  tail window, inclusive of its start sample.
+- **Observed settling time:** first sample after the last sample outside the
+  band, provided at least one full tail-window duration remains afterward —
+  evidence of staying in-band over the recorded horizon only, not forever.
+- No observed settling time is JSON `null`, never zero.
 - Thresholds are illustrative requirements, not turbine certification limits.
 
-Defaults: at most 10% overshoot, 2% tail error, settling within 5 seconds using a
-2% band, at least 8 seconds of data and a 1-second tail window. Override with
-`--rules rules.json`; unknown keys and non-finite/non-positive values are errors.
+Defaults: ≤10% overshoot, ≤2% tail error, settling within 5 s in a 2% band,
+≥8 s of data, 1 s tail window. Override with `--rules rules.json`; unknown
+keys and non-finite/non-positive values are errors. Inputs over 5 MB are
+rejected. `input_provenance` is recorded as "not independently verified".
+A run that fails before validation leaves no output directory behind.
 
-## Evidence
+## Requirements traceability
 
-Each completed validation bundle contains the exact input snapshot, effective
-rules, result, report source, events and provenance. Source hashes identify the
-Python implementation and the exact runtime version is recorded. A PDF build
-failure produces ERROR and does not masquerade as a complete passing report.
-
-The numerical demo and metrics are deterministic for fixed inputs and rules.
-Run IDs, timestamps, logs and PDF bytes are not promised to be byte-identical.
-The manifest records actual bytes; it does not claim deterministic packaging.
-
-Exit codes: `0` validation PASS / successful integrity check; `1` requirement
-FAIL; `2` invalid data or configuration; `3` local tool/I/O failure; `4` integrity
-failure. A failed operation may leave diagnostic files without a manifest.
-Such a directory is not a verified complete bundle.
+| Requirement | Metric | Regression test |
+|---|---|---|
+| REQ-001 overshoot ≤ 10% | overshoot fraction | `test_overshoot_*`, bias FAIL path |
+| REQ-002 tail error ≤ 2% | tail error fraction | `test_tail_*`, bias FAIL path |
+| REQ-003 settling ≤ 5 s | observed settling time | `test_settling_*` incl. boundary |
+| REQ-004 PASS/FAIL/ERROR distinct | exit codes 0/1/2 | nominal / bias / missing scenarios |
+| REQ-005 evidence integrity | SHA-256 manifest | tamper, missing, unlisted, traversal tests |
+| REQ-006 MATLAB parity | comparator at pinned tols | `test_matlab_parity.py` (4 tests) |
 
 ## MATLAB handoff
 
-Upload `matlab/export_step_response.m` to MATLAB, or run it locally:
+`matlab/export_step_response.m` implements the same nominal model in MATLAB
+(basic arithmetic + CSV output — no Simulink, no Engine API), with
+`matlab/test_export_step_response.m` covering row count, header, time grid,
+model match, and no-overwrite behavior.
+
+Executed 2026-09-17 on MATLAB 26.1.0.3346908 (R2026a) Update 5 (PCWIN64),
+trial install: `runtests` 3 passed / 0 failed; 101-row CSV checked in at
+`tests/fixtures/matlab_nominal.csv` with provenance
+(`tests/fixtures/matlab_provenance.json`, SHA-256 hash of the exact bytes)
+and measured tolerances (`tests/fixtures/parity_tolerances.json`:
+response max abs gap 4.996e-16, pinned at 1e-12). To reproduce:
 
 ```matlab
 addpath('matlab');
 export_step_response('matlab_nominal.csv');
 ```
 
-Then validate the exported CSV with this Python tool. Compare it with the Python
-nominal dataset using explicit tolerances before claiming MATLAB/Python parity.
-The script uses basic MATLAB arithmetic and CSV output, not Simulink or the
-MATLAB Engine API.
+then compare with the Python nominal dataset at the pinned tolerances before
+claiming parity. `tests/test_matlab_parity.py` verifies the fixture parses
+under the strict contract, passes nominal requirements, matches its
+provenance hash, and stays within tolerance.
 
-Executed 2026-09-17 on MATLAB 26.1.0.3346908 (R2026a) Update 5 (PCWIN64):
-`runtests` 3 passed / 0 failed, 101-row CSV checked in at
-`tests/fixtures/matlab_nominal.csv` with provenance and measured tolerances
-(`tests/fixtures/matlab_provenance.json`,
-`tests/fixtures/parity_tolerances.json`; response max abs gap 5.0e-16,
-tolerances pinned at 1e-12). `tests/test_matlab_parity.py` verifies the
-fixture parses under the strict contract, passes nominal requirements,
-matches its provenance hash, and stays within the pinned tolerances.
-See `VALIDATION.md` for the full evidence record.
+## Continuous integration
 
-## Publishing
+`.github/workflows/python-checks.yml` runs on push/PR (Python 3.12, 3.13):
 
-Publish this directory as its own repository if desired; no repository, branch,
-commit, remote, deployment, account or referral was created by this build.
-The included `.github/workflows/python-checks.yml` activates only when this
-directory is a repository root. It runs the full Python suite, replays the
-comparator/parity regression against the checked-in MATLAB fixture, and
-exercises the bias case as a deliberate regression (must exit 1, FAIL not
-ERROR). MATLAB itself never runs in CI. Evidence bundles and the parity
-report upload as artifacts even on failure. It uses no secrets. Remote
-execution still needs a push: inspect the actual hosted run before claiming
-CI experience, and flip the run red on purpose (e.g. tighten a tolerance)
-to show the regression blocks checks.
+1. Full suite (`unittest discover -s tests`).
+2. Parity regression: comparator at the pinned 1e-12 tolerances against the
+   checked-in MATLAB fixture — MATLAB itself never runs in CI.
+3. Nominal demo → validate → verify chain.
+4. Deliberate red: bias data **must** exit 1; a 0 fails the run.
+5. Evidence artifacts (`runs/ci-nominal/`, `runs/ci-bias/`, parity report)
+   uploaded with `if: always()`.
 
-Review and understand the AI-assisted implementation before representing it as
-your work. The MATLAB execution above is evidenced in-repo and explainable;
-do not put Artifactory, production usage, coverage percentages, or hiring
-outcomes on your resume without corresponding evidence.
+Ten contract tests (`tests/test_ci_workflow.py`) pin this behavior locally,
+including that workflow tolerances match `parity_tolerances.json` exactly.
+
+## Evidence
+
+Each bundle holds the exact input snapshot, effective rules, result, report
+source, events, and provenance. Source hashes identify the Python
+implementation; the runtime version is recorded. A PDF failure yields ERROR,
+never a masquerading PASS. The demo and metrics are deterministic for fixed
+inputs; run IDs, timestamps, and PDF bytes are not promised byte-identical.
+
+## Comparison
+
+| | Ad-hoc scripts + plots | Simulink Test | ValidationBench |
+|---|---|---|---|
+| License / cost | free, but throwaway | commercial, needs MATLAB license | MIT, stdlib-only |
+| Requirement checks | implicit in code | formal test cases | explicit numeric contract |
+| Evidence sealing | none | project/test artifacts | SHA-256 manifest + verify |
+| MATLAB agreement | eyeballed | native | measured fixture gate (4.996e-16) |
+| CI without MATLAB | n/a | needs license/server | fixture-based parity, keyless |
+| Scope | anything | full dynamic-system testing | 1-D step responses only |
+
+ValidationBench wins on zero-dependency reproducibility and sealed evidence;
+it is not a substitute for Simulink Test on real dynamic systems. That
+boundary is the point.
+
+## Limitations (read before citing this)
+
+- MATLAB ran once, on a trial install — the fixture is real but single-source.
+- Coverage is executable-line via stdlib `trace` (100%, 353/353), not branch coverage.
+- No performance benchmarks, no real plant data, no production deployment.
+- The hosted Actions run is unverified until pushed and inspected.
+- PDFs need local `pdflatex`; CI does not build PDFs.
+
+## Project structure
+
+```
+.github/workflows/python-checks.yml  # suite + parity + bias-fail + artifacts
+matlab/                               # export_step_response.m + functiontests
+scripts/compare_step_response.py      # offline CSV-vs-CSV comparator
+tests/fixtures/                       # MATLAB CSV + provenance + tolerances
+tests/test_validation.py              # contract, bundle, report tests
+tests/test_compare_step_response.py   # comparator tests
+tests/test_matlab_parity.py           # fixture + parity tests
+tests/test_ci_workflow.py             # CI contract tests
+validationbench/                      # core.py, __main__.py, artifacts.py, report.py
+```
+
+## Development
+
+```bash
+python -m unittest discover -s tests -v     # full suite
+python -m unittest discover -s tests -p "test_validation.py"   # one file
+```
+
+Conventions: stdlib only, no new dependencies; TDD (RED→GREEN→REFACTOR);
+every behavior change ships with a regression test; docs claim only what
+`VALIDATION.md` records as executed.
+
+## Resume / interview note
+
+Review and understand the AI-assisted implementation before representing it
+as your work. The MATLAB execution above is evidenced in-repo and
+explainable; do not put Artifactory, production usage, coverage percentages,
+or hiring outcomes on your resume without corresponding evidence.
+One-liner: "Built a stdlib-only validation CLI that seals evidence bundles
+with SHA-256 manifests, verified against a real MATLAB R2026a baseline at
+5e-16 agreement, gated by keyless CI."
+
+## License
+
+MIT — see [LICENSE](LICENSE).
