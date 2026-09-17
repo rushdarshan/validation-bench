@@ -1,0 +1,5 @@
+# Keep the MATLAB evidence fixture bit-identical on every platform.
+# The file has CRLF line endings (as MATLAB on Windows wrote it) and its
+# SHA-256 is hash-gated by tests/test_matlab_parity.py, so Git must never
+# apply line-ending conversion on checkout. Binary marker = no conversion.
+tests/fixtures/matlab_nominal.csv -text

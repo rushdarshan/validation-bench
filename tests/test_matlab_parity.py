@@ -50,6 +50,15 @@ class MatlabParityTests(unittest.TestCase):
         actual = hashlib.sha256(FIXTURE.read_bytes()).hexdigest()
         self.assertEqual(provenance["csv_sha256"], actual)
 
+    def test_fixture_bytes_are_checkout_stable(self):
+        # The fixture carries CRLF (as MATLAB wrote it) and its SHA-256 is
+        # hash-gated above, so .gitattributes must forbid line-ending
+        # conversion — otherwise Linux checkouts hash differently and CI
+        # fails while the local suite stays green.
+        attributes = (REPO_ROOT / ".gitattributes").read_text(encoding="utf-8")
+        self.assertIn("matlab_nominal.csv", attributes)
+        self.assertTrue("-text" in attributes or "binary" in attributes)
+
     def test_measured_parity_within_pinned_tolerances(self):
         tolerances = json.loads(TOLERANCES.read_text(encoding="utf-8"))
         tmp_root = REPO_ROOT / ".test-tmp"
