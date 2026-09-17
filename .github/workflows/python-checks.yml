@@ -1,0 +1,44 @@
+name: Python validation checks
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m unittest discover -s tests -v
+      - run: python -m validationbench demo --scenario nominal --output examples/ci-nominal.csv
+      # Parity regression against the checked-in MATLAB fixture.
+      # Tolerances pinned in tests/fixtures/parity_tolerances.json;
+      # MATLAB itself never runs in CI.
+      - run: python scripts/compare_step_response.py examples/ci-nominal.csv tests/fixtures/matlab_nominal.csv --abs-tol 1e-12 --rel-tol 1e-12 > parity-report.txt && cat parity-report.txt
+      - run: python -m validationbench validate examples/ci-nominal.csv --output runs/ci-nominal
+      - run: python -m validationbench verify runs/ci-nominal
+      # Deliberate regression demo: bias data must FAIL requirements
+      # (exit 1), never pass (0) or error (2/3). If the tool ever
+      # returns 0 here, this step fails and the run goes red.
+      - run: |
+          python -m validationbench demo --scenario bias --output examples/ci-bias.csv
+          if python -m validationbench validate examples/ci-bias.csv --output runs/ci-bias; then
+            echo "expected exit 1 (FAIL), got 0" >&2; exit 1
+          else
+            test $? -eq 1
+          fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ci-evidence-py${{ matrix.python }}
+          if-no-files-found: warn
+          path: |
+            runs/ci-nominal/
+            runs/ci-bias/
+            parity-report.txt
