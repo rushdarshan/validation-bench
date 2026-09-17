@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+runs/
+examples/*.csv
+.test-tmp/
+matlab_nominal.csv
+# Local-only: dev journals, agent session files, harness state, internal docs.
+docs/
+session-ses_f506.md
+.opencode/
+.claude/
+.agents/
+agent/
+skills-lock.json
+.caliper/
