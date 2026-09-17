@@ -14,6 +14,8 @@ asserted here too, so CI can never silently swap in an evidenced claim.
 
 import json
 import re
+import shutil
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -69,6 +71,20 @@ class CiWorkflowTests(unittest.TestCase):
     def test_provenance_fixture_checked_in(self):
         for name in ("matlab_nominal.csv", "matlab_provenance.json", "parity_tolerances.json"):
             self.assertTrue((FIXTURES / name).is_file(), f"missing {name}")
+
+    @unittest.skipUnless(shutil.which("git"), "git required to check ignore rules")
+    def test_fixtures_are_not_git_ignored(self):
+        # Regression: a bare `matlab_nominal.csv` gitignore pattern once
+        # excluded the evidence fixture at every level, so CI ran without
+        # it while the local suite stayed green.
+        for name in ("matlab_nominal.csv", "matlab_provenance.json", "parity_tolerances.json"):
+            completed = subprocess.run(
+                ["git", "check-ignore", "-q", str(FIXTURES / name)],
+                cwd=str(REPO_ROOT),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            self.assertNotEqual(completed.returncode, 0, f"{name} is git-ignored; CI cannot see it")
 
     def test_readme_documents_fixture_based_ci(self):
         self.assertIn("MATLAB itself never runs in CI", README.read_text(encoding="utf-8"))

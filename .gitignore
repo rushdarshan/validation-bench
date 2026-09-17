@@ -3,7 +3,9 @@ __pycache__/
 runs/
 examples/*.csv
 .test-tmp/
-matlab_nominal.csv
+# Root-level MATLAB working output only (leading slash: must not match
+# the checked-in evidence fixture at tests/fixtures/matlab_nominal.csv).
+/matlab_nominal.csv
 # Local-only: dev journals, agent session files, harness state, internal docs.
 docs/
 session-ses_f506.md
