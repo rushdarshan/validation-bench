@@ -194,3 +194,23 @@ MATLAB/Simulink system; Artifactory and MATLAB CI stay later phases):
   secrets scan clean, probes removed.
 - Node checklist N/A (no TS/lint/build in this repo). MATLAB CI and
   JFrog remain deferred; hosted Actions run still awaits a push.
+
+## September 17, 2026: hosted CI goes green (with two real fixes)
+
+- First hosted runs failed: `tests/fixtures/matlab_nominal.csv` was
+  never pushed — the root `.gitignore` line `matlab_nominal.csv` matched
+  at every level. Fixed by narrowing to `/matlab_nominal.csv` and
+  tracking the fixture, plus a `test_fixtures_are_not_git_ignored`
+  guard test.
+- Second failure: provenance hash `7743308c...` (hashed from the Windows
+  worktree) mismatched the Linux checkout (`bd07e3da...`). First blamed
+  runner-side conversion; the true cause was local: `core.autocrlf=true`
+  had normalized the CSV to LF when it was added, so the blob never
+  contained the hashed CRLF bytes. Fixed by checking in LF bytes,
+  pointing provenance at the blob hash, marking the fixture `-text` in
+  `.gitattributes`, and documenting the normalization in
+  `tests/fixtures/README.md` — numeric content untouched (parity gap
+  still 4.996e-16, suite green before and after).
+- Final state: run 35254249695 SUCCESS on both matrix jobs (3.12, 3.13),
+  56/56 tests. Lesson recorded: hash what git stores (`git cat-file`),
+  not what the worktree shows.
