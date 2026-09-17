@@ -7,10 +7,14 @@ files. Do not invent or estimate replacements — re-run in MATLAB instead.
 ## Provenance of the landed files
 
 - `matlab_nominal.csv` (101 data rows, SHA-256
-  `7743308ce053c04aa68fcbe9755892ba9761ec743fe69824bb4f75d5fda48532`):
-  exact bytes of MATLAB `export_step_response("matlab_nominal.csv")`
-  on 26.1.0.3346908 (R2026a) Update 5 / PCWIN64. No reformatting,
-  no re-saving through another tool.
+  `bd07e3dae31e4b91545f591b4d824bcb1729dc4d3a3860efc57fcea596554854`):
+  numeric content exactly as MATLAB `export_step_response` wrote it on
+  26.1.0.3346908 (R2026a) Update 5 / PCWIN64, with line endings
+  normalized CRLF -> LF on check-in. Reason: Git converts line endings
+  on some checkouts, which changes the byte hash and breaks the
+  provenance gate on Linux CI while local Windows stays green. No
+  numeric reformatting, no re-saving through another tool; the original
+  session log is retained in `matlab_validation_log.txt`.
 - `matlab_provenance.json`: `matlab_version` is the `version` text from
   the log; `run_date` is the session date; `csv_sha256` matches the file
   above; `matlab_tests` is the `runtests` total from the log
